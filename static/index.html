@@ -2,67 +2,68 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Plate Recognition - Multi Camera</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Plate Recognition Demo</title>
 </head>
 <body>
   <h2>License Plate Detection (Live)</h2>
 
-  <label for="cameraSelect">Select Camera:</label>
-  <select id="cameraSelect"></select>
-  <br><br>
-
-  <label for="plateFile">Upload plate list (Excel or TXT):</label>
-  <input type="file" id="plateFile" accept=".xlsx,.xls,.txt">
-  <button onclick="uploadPlates()">Upload</button>
-  <a href="/template" download>
-    <button>Download Template</button>
-  </a>
-  <br><br>
-
-  <video id="video" width="400" autoplay playsinline></video>
+  <select id="cameraSelector" style="margin-bottom: 10px;"></select>
+  <video id="video" width="400" autoplay></video>
   <p id="result"></p>
+  <p id="noCameras" style="color: red; display: none;">⚠️ No cameras found.</p>
+
+  <hr/>
+
+  <h3>📥 Subir lista de placas autorizadas</h3>
+  <form id="uploadForm">
+    <input type="file" id="plateFile" accept=".xlsx"/>
+    <button type="submit">Subir Excel</button>
+  </form>
+  <p id="uploadStatus"></p>
+
+  <h3>📄 Descargar plantilla de Excel</h3>
+  <button onclick="downloadTemplate()">Descargar plantilla</button>
 
   <script>
     const video = document.getElementById("video");
     const result = document.getElementById("result");
-    const cameraSelect = document.getElementById("cameraSelect");
-    let currentStream;
+    const noCameras = document.getElementById("noCameras");
 
-    async function getCameras() {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      return devices.filter(device => device.kind === "videoinput");
-    }
+    navigator.mediaDevices.enumerateDevices()
+      .then(devices => {
+        const videoDevices = devices.filter(device => device.kind === "videoinput");
+        if (videoDevices.length === 0) {
+          noCameras.style.display = "block";
+          return;
+        }
 
-    async function startCamera(deviceId) {
-      if (currentStream) {
-        currentStream.getTracks().forEach(track => track.stop());
-      }
+        noCameras.style.display = "none";
+        const defaultDeviceId = videoDevices[0].deviceId;
+        startStream(defaultDeviceId);
 
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { deviceId: deviceId ? { exact: deviceId } : undefined }
+        const selector = document.getElementById("cameraSelector");
+        videoDevices.forEach((device, index) => {
+          const option = document.createElement("option");
+          option.value = device.deviceId;
+          option.text = device.label || `Camera ${index + 1}`;
+          selector.appendChild(option);
         });
-        video.srcObject = stream;
-        currentStream = stream;
-      } catch (err) {
-        result.innerText = `Camera access error: ${err}`;
-      }
-    }
 
-    function populateCameraList(cameras) {
-      cameraSelect.innerHTML = "";
-      cameras.forEach((camera, index) => {
-        const option = document.createElement("option");
-        option.value = camera.deviceId;
-        option.text = camera.label || `Camera ${index + 1}`;
-        cameraSelect.appendChild(option);
+        selector.onchange = () => {
+          startStream(selector.value);
+        };
       });
-    }
 
-    cameraSelect.addEventListener("change", () => {
-      startCamera(cameraSelect.value);
-    });
+    function startStream(deviceId) {
+      navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: deviceId } } })
+        .then(stream => {
+          video.srcObject = stream;
+        })
+        .catch(err => {
+          result.innerText = "Camera error: " + err;
+        });
+    }
 
     function captureAndSend() {
       const canvas = document.createElement("canvas");
@@ -83,12 +84,12 @@
         .then(data => {
           if (data.results.length > 0) {
             let lines = data.results.map(r => {
-              return `Detected: ${r.plate} | ` +
-                (r.authorized ? "✅ Authorized" : "⚠️ Detected but not in database");
+              return `📸 ${r.plate} | ` +
+                (r.authorized ? "✅ Autorizada" : "⚠️ No está en la base");
             });
             result.innerText = lines.join("\n");
           } else {
-            result.innerText = "No plate detected.";
+            result.innerText = "No se detectaron placas.";
           }
         })
         .catch(err => {
@@ -97,40 +98,30 @@
       }, "image/jpeg");
     }
 
-    async function uploadPlates() {
-      const fileInput = document.getElementById("plateFile");
-      if (!fileInput.files.length) {
-        alert("Please select a file to upload.");
-        return;
-      }
+    setInterval(captureAndSend, 3000);
 
+    // 📤 Subida del archivo de placas
+    document.getElementById("uploadForm").addEventListener("submit", function (e) {
+      e.preventDefault();
+      const fileInput = document.getElementById("plateFile");
       const formData = new FormData();
       formData.append("file", fileInput.files[0]);
 
-      const response = await fetch("/upload-plates", {
+      fetch("/upload-plates", {
         method: "POST",
         body: formData
+      })
+      .then(res => res.json())
+      .then(data => {
+        document.getElementById("uploadStatus").innerText =
+          data.status === "ok" ? "✅ Archivo subido exitosamente." : "❌ Error: " + data.detail;
       });
+    });
 
-      if (response.ok) {
-        alert("Plate list uploaded successfully.");
-      } else {
-        alert("Failed to upload plate list.");
-      }
+    // 📥 Descargar plantilla
+    function downloadTemplate() {
+      window.open("/template", "_blank");
     }
-
-    async function init() {
-      const cameras = await getCameras();
-      if (cameras.length === 0) {
-        result.innerText = "No video input devices found.";
-        return;
-      }
-      populateCameraList(cameras);
-      startCamera(cameras[0].deviceId);
-    }
-
-    init();
-    setInterval(captureAndSend, 3000);
   </script>
 </body>
 </html>
