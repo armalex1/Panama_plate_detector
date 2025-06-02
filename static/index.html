@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Plate Recognition - Multi Camera</title>
+</head>
+<body>
+  <h2>License Plate Detection (Live)</h2>
+
+  <label for="cameraSelect">Select Camera:</label>
+  <select id="cameraSelect"></select>
+  <br><br>
+
+  <label for="plateFile">Upload plate list (Excel or TXT):</label>
+  <input type="file" id="plateFile" accept=".xlsx,.xls,.txt">
+  <button onclick="uploadPlates()">Upload</button>
+  <a href="/template" download>
+    <button>Download Template</button>
+  </a>
+  <br><br>
+
+  <video id="video" width="400" autoplay playsinline></video>
+  <p id="result"></p>
+
+  <script>
+    const video = document.getElementById("video");
+    const result = document.getElementById("result");
+    const cameraSelect = document.getElementById("cameraSelect");
+    let currentStream;
+
+    async function getCameras() {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      return devices.filter(device => device.kind === "videoinput");
+    }
+
+    async function startCamera(deviceId) {
+      if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { deviceId: deviceId ? { exact: deviceId } : undefined }
+        });
+        video.srcObject = stream;
+        currentStream = stream;
+      } catch (err) {
+        result.innerText = `Camera access error: ${err}`;
+      }
+    }
+
+    function populateCameraList(cameras) {
+      cameraSelect.innerHTML = "";
+      cameras.forEach((camera, index) => {
+        const option = document.createElement("option");
+        option.value = camera.deviceId;
+        option.text = camera.label || `Camera ${index + 1}`;
+        cameraSelect.appendChild(option);
+      });
+    }
+
+    cameraSelect.addEventListener("change", () => {
+      startCamera(cameraSelect.value);
+    });
+
+    function captureAndSend() {
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const context = canvas.getContext("2d");
+      context.drawImage(video, 0, 0);
+
+      canvas.toBlob(blob => {
+        const formData = new FormData();
+        formData.append("file", blob, "capture.jpg");
+
+        fetch("/detect", {
+          method: "POST",
+          body: formData
+        })
+        .then(res => res.json())
+        .then(data => {
+          if (data.results.length > 0) {
+            let lines = data.results.map(r => {
+              return `Detected: ${r.plate} | ` +
+                (r.authorized ? "✅ Authorized" : "⚠️ Detected but not in database");
+            });
+            result.innerText = lines.join("\n");
+          } else {
+            result.innerText = "No plate detected.";
+          }
+        })
+        .catch(err => {
+          result.innerText = "Error: " + err;
+        });
+      }, "image/jpeg");
+    }
+
+    async function uploadPlates() {
+      const fileInput = document.getElementById("plateFile");
+      if (!fileInput.files.length) {
+        alert("Please select a file to upload.");
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append("file", fileInput.files[0]);
+
+      const response = await fetch("/upload-plates", {
+        method: "POST",
+        body: formData
+      });
+
+      if (response.ok) {
+        alert("Plate list uploaded successfully.");
+      } else {
+        alert("Failed to upload plate list.");
+      }
+    }
+
+    async function init() {
+      const cameras = await getCameras();
+      if (cameras.length === 0) {
+        result.innerText = "No video input devices found.";
+        return;
+      }
+      populateCameraList(cameras);
+      startCamera(cameras[0].deviceId);
+    }
+
+    init();
+    setInterval(captureAndSend, 3000);
+  </script>
+</body>
+</html>
