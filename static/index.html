@@ -66,13 +66,26 @@
     }
 
     function captureAndSend() {
+      const width = video.videoWidth;
+      const height = video.videoHeight;
+
+      if (!width || !height) {
+        console.warn("⛔ El video aún no está listo para capturar.");
+        return;
+      }
+
       const canvas = document.createElement("canvas");
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
+      canvas.width = width;
+      canvas.height = height;
       const context = canvas.getContext("2d");
       context.drawImage(video, 0, 0);
 
       canvas.toBlob(blob => {
+        if (!blob) {
+          console.warn("⛔ No se pudo generar una imagen desde el video.");
+          return;
+        }
+
         const formData = new FormData();
         formData.append("file", blob, "capture.jpg");
 
