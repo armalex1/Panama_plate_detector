@@ -1,23 +1,24 @@
 def read_plate_text(reader, image):
     results = reader.readtext(image)
     if results:
-        return "".join([r[1] for r in results])
+        return " ".join([r[1] for r in results])
     return ""
 
 
-def extract_valid_plate(text):
+def extract_valid_plates(text):
     import re
     text = text.upper().replace(" ", "")
     patterns = [
-        r'\b[A-Z]{2}[0-9]{4}\b',     # Particular
-        r'\bM[0-9]{4}\b',            # Moto
-        r'\bT[0-9]{5}\b',            # Taxi
-        r'\bC[A-Z]{2}[0-9]{4}\b',    # Comercial
-        r'\bD[0-9]{4}\b',            # Diplomática
-        r'\bG[0-9]{4}\b',            # Gubernamental
+        r'[A-Z]{2}[0-9]{4}',     # Placa estándar (ej: AB1234)
+        r'M[0-9]{4}',            # Moto
+        r'T[0-9]{5}',            # Taxi
+        r'C[A-Z]{2}[0-9]{4}',    # Comercial
+        r'D[0-9]{4}',            # Diplomática
+        r'G[0-9]{4}',            # Gubernamental
+        r'[0-9]{6,}'             # Números largos (sin letras) - nuevo
     ]
+    found = set()
     for pattern in patterns:
-        match = re.search(pattern, text)
-        if match:
-            return match.group(0)
-    return ""
+        matches = re.findall(pattern, text)
+        found.update(matches)
+    return list(found)

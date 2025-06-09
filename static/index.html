@@ -1,139 +1,214 @@
+<!-- index.html corregido y finalizado -->
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Plate Recognition Demo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Detección de Placas - Proyecto</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #f4f4f8;
+      color: #333;
+      display: flex;
+      flex-direction: row;
+      height: 100vh;
+      overflow-x: hidden;
+    }
+    .container { flex: 2; padding: 2rem; }
+    .log-panel {
+      flex: 1;
+      background-color: #fff;
+      border-left: 1px solid #ccc;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    #logTable {
+      flex: 1;
+      overflow-y: auto;
+      display: block;
+      max-height: calc(100vh - 160px);
+    }
+    video {
+      width: 45vw;
+      max-width: 100%;
+      display: block;
+      margin: 0 auto;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+    }
+    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+    th, td { border: 1px solid #ccc; padding: 0.5rem; font-size: 0.9rem; }
+    th { background-color: #f0f0f0; }
+    button {
+      padding: 0.5rem 1rem;
+      background-color: #0078D4;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-left: 1rem;
+    }
+    button:hover { background-color: #005fa3; }
+    .form-row {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-top: 1rem;
+      flex-wrap: wrap;
+    }
+    .log-panel h3, .log-panel label {
+      margin-top: 0.5rem;
+      display: block;
+    }
+  </style>
 </head>
 <body>
-  <h2>License Plate Detection (Live)</h2>
+  <div class="container">
+    <h2>License Plate Detection (Live)</h2>
+    <video id="video" autoplay muted playsinline></video>
+    <br>
+    <select id="cameraSelector"></select>
+    <div class="form-row">
+      <form id="uploadForm">
+        <input type="file" id="plateFile" accept=".xlsx" />
+        <button type="submit">Subir Excel</button>
+      </form>
+      <button onclick="downloadTemplate()">Descargar plantilla</button>
+      <button onclick="downloadVisibleLog()">📅 Descargar log</button>
+    </div>
+    <p id="uploadStatus"></p>
+  </div>
 
-  <select id="cameraSelector" style="margin-bottom: 10px;"></select>
-  <video id="video" width="400" autoplay></video>
-  <p id="result"></p>
-  <p id="noCameras" style="color: red; display: none;">⚠️ No cameras found.</p>
-
-  <hr/>
-
-  <h3>📥 Subir lista de placas autorizadas</h3>
-  <form id="uploadForm">
-    <input type="file" id="plateFile" accept=".xlsx"/>
-    <button type="submit">Subir Excel</button>
-  </form>
-  <p id="uploadStatus"></p>
-
-  <h3>📄 Descargar plantilla de Excel</h3>
-  <button onclick="downloadTemplate()">Descargar plantilla</button>
+  <div class="log-panel">
+    <h3>📜 Log de búsqueda</h3>
+    <label><input type="checkbox" id="showAll" checked> Mostrar todas las placas detectadas</label>
+    <table id="logTable">
+      <thead>
+        <tr><th>Fecha</th><th>Hora</th><th>Placa</th><th>Estatus</th><th>Mapa</th></tr>
+      </thead>
+      <tbody id="logBody"></tbody>
+    </table>
+  </div>
 
   <script>
     const video = document.getElementById("video");
-    const result = document.getElementById("result");
-    const noCameras = document.getElementById("noCameras");
+    const selector = document.getElementById("cameraSelector");
+    const logBody = document.getElementById("logBody");
+    const showAll = document.getElementById("showAll");
+    let allResults = [];
 
-    navigator.mediaDevices.enumerateDevices()
-      .then(devices => {
-        const videoDevices = devices.filter(device => device.kind === "videoinput");
-        if (videoDevices.length === 0) {
-          noCameras.style.display = "block";
-          return;
-        }
-
-        noCameras.style.display = "none";
-        const defaultDeviceId = videoDevices[0].deviceId;
-        startStream(defaultDeviceId);
-
-        const selector = document.getElementById("cameraSelector");
-        videoDevices.forEach((device, index) => {
-          const option = document.createElement("option");
-          option.value = device.deviceId;
-          option.text = device.label || `Camera ${index + 1}`;
-          selector.appendChild(option);
-        });
-
-        selector.onchange = () => {
-          startStream(selector.value);
-        };
+    navigator.mediaDevices.enumerateDevices().then(devices => {
+      const videoDevices = devices.filter(d => d.kind === "videoinput");
+      if (videoDevices.length === 0) return;
+      startStream(videoDevices[0].deviceId);
+      videoDevices.forEach((device, i) => {
+        const option = document.createElement("option");
+        option.value = device.deviceId;
+        option.text = device.label || `Camera ${i + 1}`;
+        selector.appendChild(option);
       });
+    });
+
+    selector.onchange = () => startStream(selector.value);
 
     function startStream(deviceId) {
       navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: deviceId } } })
         .then(stream => {
           video.srcObject = stream;
         })
-        .catch(err => {
-          result.innerText = "Camera error: " + err;
-        });
+        .catch(err => console.error("Camera error:", err));
+    }
+
+    function renderTable() {
+      logBody.innerHTML = "";
+      const filter = showAll.checked;
+      allResults.forEach(r => {
+        if (!filter && r.match_type !== "exact") return;
+
+        let estatus = "❌ No autorizada";
+        if (r.match_type === "exact") estatus = "✅ Autorizada";
+        else if (r.match_type === "partial") estatus = "⚠️ Parecida";
+
+        const row = document.createElement("tr");
+        row.innerHTML = `<td>${r.fecha}</td><td>${r.hora}</td><td>${r.plate}</td><td>${estatus}</td><td><a href="https://maps.google.com/?q=${r.lat},${r.lon}" target="_blank">https://maps.google.com/?q=${r.lat},${r.lon}</a></td>`;
+        logBody.appendChild(row);
+      });
     }
 
     function captureAndSend() {
-      const width = video.videoWidth;
-      const height = video.videoHeight;
+      navigator.geolocation.getCurrentPosition(position => {
+        const { latitude, longitude } = position.coords;
+        const tempCanvas = document.createElement("canvas");
+        tempCanvas.width = video.videoWidth;
+        tempCanvas.height = video.videoHeight;
+        tempCanvas.getContext("2d").drawImage(video, 0, 0);
+        tempCanvas.toBlob(blob => {
+          const formData = new FormData();
+          formData.append("file", blob, "frame.jpg");
+          formData.append("lat", latitude);
+          formData.append("lon", longitude);
 
-      if (!width || !height) {
-        console.warn("⛔ El video aún no está listo para capturar.");
-        return;
-      }
-
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
-      const context = canvas.getContext("2d");
-      context.drawImage(video, 0, 0);
-
-      canvas.toBlob(blob => {
-        if (!blob) {
-          console.warn("⛔ No se pudo generar una imagen desde el video.");
-          return;
-        }
-
-        const formData = new FormData();
-        formData.append("file", blob, "capture.jpg");
-
-        fetch("/detect", {
-          method: "POST",
-          body: formData
-        })
-        .then(res => res.json())
-        .then(data => {
-          if (data.results.length > 0) {
-            let lines = data.results.map(r => {
-              return `📸 ${r.plate} | ` +
-                (r.authorized ? "✅ Autorizada" : "⚠️ No está en la base");
-            });
-            result.innerText = lines.join("\n");
-          } else {
-            result.innerText = "No se detectaron placas.";
-          }
-        })
-        .catch(err => {
-          result.innerText = "Error: " + err;
-        });
-      }, "image/jpeg");
+          fetch("/detect", { method: "POST", body: formData })
+            .then(res => res.json())
+            .then(data => {
+              allResults = allResults.concat(data.results);
+              renderTable();
+            })
+            .catch(err => console.error("Error:", err));
+        }, "image/jpeg");
+      }, error => {
+        console.error("No se pudo obtener la ubicación:", error);
+      });
     }
 
     setInterval(captureAndSend, 3000);
+    showAll.addEventListener("change", renderTable);
 
-    // 📤 Subida del archivo de placas
     document.getElementById("uploadForm").addEventListener("submit", function (e) {
       e.preventDefault();
       const fileInput = document.getElementById("plateFile");
       const formData = new FormData();
       formData.append("file", fileInput.files[0]);
-
-      fetch("/upload-plates", {
-        method: "POST",
-        body: formData
-      })
-      .then(res => res.json())
-      .then(data => {
-        document.getElementById("uploadStatus").innerText =
-          data.status === "ok" ? "✅ Archivo subido exitosamente." : "❌ Error: " + data.detail;
-      });
+      fetch("/upload-plates", { method: "POST", body: formData })
+        .then(res => res.json())
+        .then(data => {
+          document.getElementById("uploadStatus").innerText =
+            data.status === "ok" ? "✅ Archivo subido exitosamente." : "❌ Error: " + data.detail;
+        });
     });
 
-    // 📥 Descargar plantilla
     function downloadTemplate() {
       window.open("/template", "_blank");
+    }
+
+    function downloadVisibleLog() {
+      let csvContent = "Fecha,Hora,Placa,Estatus,URL del Mapa\n";
+      const rows = logBody.querySelectorAll("tr");
+      rows.forEach(row => {
+        const cols = row.querySelectorAll("td");
+        if (cols.length === 5) {
+          const [fechaTd, horaTd, placaTd, estatusTd, mapaTd] = cols;
+          const fecha = fechaTd.innerText;
+          const hora = horaTd.innerText;
+          const placa = placaTd.innerText;
+          const estatus = estatusTd.innerText.replace(/[\u2705\u274C\u26A0\ufe0f]/g, '').trim();
+          const url = mapaTd.querySelector("a")?.href || "";
+          csvContent += `"${fecha}","${hora}","${placa}","${estatus}","${url}"\n`;
+        }
+      });
+
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "log_placas_detectadas.csv";
+      a.click();
+      URL.revokeObjectURL(url);
     }
   </script>
 </body>

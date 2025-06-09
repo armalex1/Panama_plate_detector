@@ -1,24 +1,50 @@
 import cv2
+from ultralytics import YOLO
+import torch.serialization
+
+from torch.nn.modules.container import Sequential, ModuleList
+from torch.nn.modules.pooling import MaxPool2d
+from torch.nn import Conv2d, BatchNorm2d, SiLU
+from ultralytics.nn.tasks import DetectionModel
+from ultralytics.nn.modules.conv import Conv
+from ultralytics.nn.modules.block import C2f, Bottleneck, SPPF
+from torch.nn.modules.upsampling import Upsample
+from ultralytics.nn.modules.conv import Concat
+from ultralytics.nn.modules.head import Detect
+from ultralytics.nn.modules.block import DFL
+from ultralytics.yolo.utils import IterableSimpleNamespace
+from ultralytics.yolo.utils.loss import v8DetectionLoss, BboxLoss
+from torch.nn.modules.loss import BCEWithLogitsLoss
+from ultralytics.yolo.utils.tal import TaskAlignedAssigner
+
+# Registro seguro para cargar modelos
+torch.serialization.add_safe_globals([
+    Sequential, ModuleList,
+    Conv2d, BatchNorm2d, SiLU,
+    DetectionModel, Conv,
+    C2f, Bottleneck, SPPF,
+    MaxPool2d, Upsample,
+    Concat, Detect, DFL,
+    IterableSimpleNamespace,
+    v8DetectionLoss,
+    BCEWithLogitsLoss,
+    TaskAlignedAssigner,
+    BboxLoss
+])
+
+# Cargar el modelo entrenado
+model = YOLO("license_plate_detector.pt", task='detect')
 
 
-def detect_plates(frame):
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    edged = cv2.Canny(blurred, 50, 200)
-    contours, _ = cv2.findContours(
-        edged.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
-    )
+def detect_plates(img):
+    results = model(img)[0]  # ⬅️ Accede al primer resultado
 
-    plates = []
-    for c in sorted(contours, key=cv2.contourArea, reverse=True)[:15]:
-        perimeter = cv2.arcLength(c, True)
-        approx = cv2.approxPolyDP(c, 0.018 * perimeter, True)
-        if len(approx) == 4:
-            x, y, w, h = cv2.boundingRect(approx)
-            ratio = w / float(h)
-            if w > 150 and h > 50 and 2.0 < ratio < 6.0:
-                plates.append((x, y, w, h))
-    return plates
+    rects = []
+    for box in results.boxes.xyxy.cpu().numpy():
+        x1, y1, x2, y2 = map(int, box[:4])
+        w, h = x2 - x1, y2 - y1
+        rects.append((x1, y1, w, h))
+    return rects
 
 
 def enhance_plate_image(image):
