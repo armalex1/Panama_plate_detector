@@ -22,3 +22,8 @@ static/last_detected.jpg
 .env
 .env.*
 *.vscode/
+
+
+# Entornos virtuales
+.venv/
+venv/

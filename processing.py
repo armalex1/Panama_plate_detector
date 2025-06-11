@@ -1,43 +1,13 @@
 import cv2
 from ultralytics import YOLO
-import torch.serialization
 
-from torch.nn.modules.container import Sequential, ModuleList
-from torch.nn.modules.pooling import MaxPool2d
-from torch.nn import Conv2d, BatchNorm2d, SiLU
-from ultralytics.nn.tasks import DetectionModel
-from ultralytics.nn.modules.conv import Conv
-from ultralytics.nn.modules.block import C2f, Bottleneck, SPPF
-from torch.nn.modules.upsampling import Upsample
-from ultralytics.nn.modules.conv import Concat
-from ultralytics.nn.modules.head import Detect
-from ultralytics.nn.modules.block import DFL
-from ultralytics.yolo.utils import IterableSimpleNamespace
-from ultralytics.yolo.utils.loss import v8DetectionLoss, BboxLoss
-from torch.nn.modules.loss import BCEWithLogitsLoss
-from ultralytics.yolo.utils.tal import TaskAlignedAssigner
-
-# Registro seguro para cargar modelos
-torch.serialization.add_safe_globals([
-    Sequential, ModuleList,
-    Conv2d, BatchNorm2d, SiLU,
-    DetectionModel, Conv,
-    C2f, Bottleneck, SPPF,
-    MaxPool2d, Upsample,
-    Concat, Detect, DFL,
-    IterableSimpleNamespace,
-    v8DetectionLoss,
-    BCEWithLogitsLoss,
-    TaskAlignedAssigner,
-    BboxLoss
-])
-
-# Cargar el modelo entrenado
-model = YOLO("license_plate_detector.pt", task='detect')
+# Cargar el modelo YOLO entrenado
+model = YOLO("license_plate_detector.pt")
 
 
 def detect_plates(img):
-    results = model(img)[0]  # ⬅️ Accede al primer resultado
+    # Ejecutar inferencia
+    results = model(img)[0]  # Primer resultado del batch
 
     rects = []
     for box in results.boxes.xyxy.cpu().numpy():
